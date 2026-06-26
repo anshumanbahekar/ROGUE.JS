@@ -1,15 +1,5 @@
 "use strict";
 
-/* =========================================================
-   ROGUE.JS — a single-file procedural dungeon crawler.
-   Everything below is plain JavaScript: dungeon generation
-   (BSP tree), recursive-shadowcasting field of view, A*
-   pathfinding for monster AI, a turn-based combat/leveling
-   system, procedural item/monster generation scaled by
-   depth, an inventory & equipment system, and a tiny canvas
-   renderer with zero styling beyond monospace green text.
-   ========================================================= */
-
 // ---------- Utility ----------
 const RNG = (() => {
   let seed = (Date.now() % 2147483647) || 1;
@@ -614,23 +604,28 @@ function enterShopLevel(depth) {
 }
 
 function generateShopStock(depth) {
-  // A handful of items spanning all categories, priced by rarity/depth, plus
+  // A handful of items spanning all categories, priced by rarity AND depth, plus
   // always at least one healing potion so a bad-luck run can still recover.
   const stock = [];
   for (let i = 0; i < 5; i++) {
-    const item = generateItem(depth + RNG.int(0, 3));
-    stock.push({ item, price: priceItem(item) });
+    const itemDepth = depth + RNG.int(0, 3);
+    const item = generateItem(itemDepth);
+    stock.push({ item, price: priceItem(item, depth) });
   }
   const potion = ITEM_TEMPLATES.potion[Math.min(1, ITEM_TEMPLATES.potion.length - 1)];
   const guaranteedPotion = Object.assign({ type: "potion", id: Math.random().toString(36).slice(2) }, potion);
-  stock.push({ item: guaranteedPotion, price: priceItem(guaranteedPotion) });
+  stock.push({ item: guaranteedPotion, price: priceItem(guaranteedPotion, depth) });
   return stock;
 }
 
-function priceItem(item) {
+function priceItem(item, depth) {
   const base = { weapon: 25, armor: 20, potion: 8, scroll: 15 }[item.type] || 10;
   const rarityMult = item.rarity || 1;
-  return Math.round(base * rarityMult * (1 + RNG.float() * 0.3));
+  // Depth scaling mirrors how item stats themselves grow with depth (see
+  // generateItem's dmgMin/dmgMax/def bonuses), so price keeps pace with power
+  // instead of staying flat while monster gold income keeps climbing.
+  const depthMult = 1 + (depth || 1) * 0.12;
+  return Math.round(base * rarityMult * depthMult * (1 + RNG.float() * 0.3));
 }
 
 function buyItem(n) {
@@ -715,6 +710,10 @@ function rangedAttack(monster) {
   if (monster.poisonBolt) {
     applyStatus(game.player, STATUS.POISON, 3, 2);
     addLog("The bolt was poisoned!");
+  }
+  if (monster.applyBurn) {
+    applyStatus(game.player, STATUS.BURNING, 3, 3);
+    addLog("The shot sets you ablaze!");
   }
   checkPlayerDeath();
 }
